@@ -99,4 +99,4 @@ choice('listen-year','g1-listening','На каком курсе Мэри?',['Н�
 choice('listen-who','g1-listening','Кем является Мэри?',['Иностранной студенткой','Преподавателем','Сотрудником компании','Школьницей'],'Иностранной студенткой','Такэси спрашивает りゅうがくせいですか, и Мэри подтверждает это.',{audio:'K01-03'});
 export const GENKI_QUESTIONS=questions;
 export const GENKI_QUESTION_BY_ID=Object.fromEntries(questions.map(q=>[q.id,q]));
-export const GENKI_AUDIO=Object.fromEntries([...GENKI_WORDS.map(w=>[w.audio,`assets/genki/words/${w.id}.mp3`]),...['K01-01','K01-02','K01-03','K01-04','K01-05','K01-06','K01-07','K01-11'].map(id=>[id,`assets/genki/${id}.mp3`])]);
+export const GENKI_AUDIO=Object.fromEntries([...GENKI_WORDS.map(w=>[w.audio,`assets/genki/words-original-v1/${w.id}.mp3`]),...['K01-01','K01-02','K01-03','K01-04','K01-05','K01-06','K01-07','K01-11'].map(id=>[id,`assets/genki/${id}.mp3`])]);

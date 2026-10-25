@@ -19,14 +19,22 @@ export function makeFloor(state,run){
  const first=spaces.findIndex(p=>distance(player,p)<=4&&lineVisible(map,player,p));if(first>0)[spaces[0],spaces[first]]=[spaces[first],spaces[0]];
  const ranked=shuffled(run.pool,rng).sort((a,b)=>Number(run.retry.includes(b))-Number(run.retry.includes(a))||Number(state.mistakes.includes(b))-Number(state.mistakes.includes(a))||(state.mastery[a]?.streak||0)-(state.mastery[b]?.streak||0));
  const monsters=Array.from({length:5},(_,i)=>({id:i,kana:ranked[i%ranked.length],...spaces[i],assisted:false}));
- return reveal({...run,map:map.map(row=>row.join('')),player,exit,monsters,potion:spaces[5],seen:Array(W*H).fill(false),target:null,feedback:null,notice:run.floor===1?'Нажми на видимого монстра и введи его чтение.':'Новый этаж. Знаки с ошибками встретятся снова.'});
+ return reveal({...run,map:map.map(row=>row.join('')),player,exit,monsters,potion:spaces[5],seen:Array(W*H).fill(false),target:null,feedback:null,notice:run.floor===1?'Введи чтение выбранного знака. Другого монстра можно выбрать нажатием.':'Новый этаж. Знаки с ошибками встретятся снова.'});
 }
 export function startDungeon(state,mode='learned',seed=(Date.now()>>>0),now=Date.now()){
  const pool=dungeonPool(state,mode);if(!pool.length)return state;
- const run=makeFloor(state,{seed:seed>>>0,startedAt:now,mode,pool,floor:1,hp:6,turn:0,kills:0,answers:0,correct:0,hints:0,retry:[],status:'explore'});
+ const run=autoTarget(makeFloor(state,{seed:seed>>>0,startedAt:now,mode,pool,floor:1,hp:6,turn:0,kills:0,answers:0,correct:0,hints:0,retry:[],status:'explore'}));
  return {...state,activeCourse:'dungeon',dungeon:{...(state.dungeon||freshDungeon()),run}};
 }
-function changed(state,run){return {...state,dungeon:{...state.dungeon,run:reveal(run)}};}
+export function autoTarget(run){
+ if(run.status!=='explore'||run.feedback)return run;
+ const visible=visibleMonsters(run);
+ if(visible.some(m=>m.id===run.target))return run;
+ const nearest=[...visible].sort((a,b)=>distance(a,run.player)-distance(b,run.player)||a.id-b.id)[0];
+ const target=nearest?.id??null;
+ return target===run.target?run:{...run,target};
+}
+function changed(state,run){return {...state,dungeon:{...state.dungeon,run:autoTarget(reveal(run))}};}
 function end(state,run,status,now){run={...run,status,target:null,feedback:null};const history=[{status,floor:run.floor,kills:run.kills,answers:run.answers,correct:run.correct,hints:run.hints,finishedAt:now},...state.dungeon.history].slice(0,30);return {...state,dungeon:{run,history}};}
 function enemiesTurn(run,allowDamage=true){
  let hit=false;const occupied=new Set(run.monsters.map(m=>m.y*W+m.x));
