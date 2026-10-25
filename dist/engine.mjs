@@ -1,21 +1,24 @@
 import {KANA,BY_ID,LESSONS,CONFUSABLES} from './content.mjs';
+import {freshGenki,validateGenki} from './genki-engine.mjs';
 export const STORAGE_KEY='kana-garden-v1';
 export const DAY=86400000;
-export function freshState(){return {version:1,xp:0,answered:0,correct:0,completed:[],mastery:{},mistakes:[],days:[],history:[],session:null};}
+export function freshState(){return {version:1,xp:0,answered:0,correct:0,completed:[],mastery:{},mistakes:[],days:[],history:[],session:null,genki:freshGenki()};}
 export function dateKey(time=Date.now()){const d=new Date(time);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 export function shuffle(list,rng=Math.random){const a=[...list];for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 export function normalize(value){return String(value).normalize('NFKC').trim().toLowerCase().replace(/\s+/g,'');}
 export function accepts(id,value){const k=BY_ID[id];if(!k)return false;const alternatives={shi:['si','ши','ши'],chi:['ti','чи'],tsu:['tu'],fu:['hu'],wo:['o','во'],n:["n'",'nn']};return [id,k.char,k.ru,...(alternatives[id]||[])].map(normalize).includes(normalize(value));}
 export function optionsFor(id,pool=KANA.map(k=>k.id),rng=Math.random){const other=[...new Set([...(CONFUSABLES[id]||[]).filter(k=>pool.includes(k)),...shuffle(pool,rng)])].filter(k=>k!==id&&BY_ID[k]);return shuffle([id,...other.slice(0,3)],rng);}
 function question(id,type,pool,rng){return {id,type,options:optionsFor(id,pool,rng),retry:false};}
+export function learnedKana(state){return KANA.filter(k=>state.mastery[k.id]||LESSONS.some(l=>state.completed.includes(l.id)&&l.ids.includes(k.id))).map(k=>k.id);}
+export function sessionTitle(id){return LESSONS.find(l=>l.id===id)?.label||(id==='mistakes'?'Повторение ошибок':id==='review'?'По расписанию':id.startsWith('practice:')?`Закрепление · ${LESSONS.find(l=>l.id===id.slice(9))?.label||''}`:'Закрепление изученного');}
 export function startSession(lessonId,state,rng=Math.random,now=Date.now()){
  const lesson=LESSONS.find(l=>l.id===lessonId);let ids;
- if(lesson){ids=lesson.ids;}else if(lessonId==='mistakes'){ids=state.mistakes.filter(id=>BY_ID[id]).slice(0,10);}else{ids=KANA.filter(k=>state.mastery[k.id]&&state.mastery[k.id].dueAt<=now).map(k=>k.id).slice(0,10);}
+ if(lesson){ids=lesson.ids;}else if(lessonId==='mistakes'){ids=state.mistakes.filter(id=>BY_ID[id]).slice(0,10);}else if(lessonId==='practice'||lessonId.startsWith('practice:')){const row=lessonId==='practice'?null:LESSONS.find(l=>l.id===lessonId.slice(9));if(lessonId!=='practice'&&!row)return null;ids=shuffle(learnedKana(state).filter(id=>!row||row.ids.includes(id)),rng).sort((a,b)=>Number(state.mistakes.includes(b))-Number(state.mistakes.includes(a))||(state.mastery[a]?.streak||0)-(state.mastery[b]?.streak||0)).slice(0,10);}else if(lessonId==='review'){ids=KANA.filter(k=>state.mastery[k.id]&&state.mastery[k.id].dueAt<=now).map(k=>k.id).slice(0,10);}else return null;
  if(!ids?.length)return null;
  const index=LESSONS.findIndex(l=>l.id===lessonId);
- const pool=lesson?LESSONS.slice(0,index+1).flatMap(l=>l.ids):[...new Set([...Object.keys(state.mastery),...ids])];
- while(pool.length<4){const next=KANA.find(k=>!pool.includes(k.id));if(!next)break;pool.push(next.id);}
- const questions=[...shuffle(ids,rng).map(id=>question(id,'read',pool,rng)),...shuffle(ids,rng).map(id=>question(id,'listen',pool,rng)),...shuffle(ids,rng).slice(0,2).map(id=>question(id,'type',pool,rng))];
+ const pool=lesson?LESSONS.slice(0,index+1).flatMap(l=>l.ids):[...new Set([...learnedKana(state),...ids])];
+ // Reinforcement uses only introduced kana, including its distractors.
+ const questions=[...shuffle(ids,rng).map(id=>question(id,pool.length<2?'type':'read',pool,rng)),...shuffle(ids,rng).map(id=>question(id,pool.length<2?'type':'listen',pool,rng)),...shuffle(ids,rng).slice(0,2).map(id=>question(id,'type',pool,rng))];
  return {id:`s-${now}`,lessonId,ids,pool,questions,index:0,phase:lesson?'learn':'exercise',learnIndex:0,feedback:null,firstAnswers:0,firstCorrect:0,startedAt:now,finished:false};
 }
 export function answer(state,value,now=Date.now()){
@@ -56,10 +59,10 @@ export function validateState(raw){
  if(!raw||raw.version!==1||!Array.isArray(raw.completed)||!Array.isArray(raw.mistakes)||!Array.isArray(raw.days)||!Array.isArray(raw.history)||typeof raw.mastery!=='object'||!raw.mastery)throw new Error('Неверный формат файла прогресса.');
  for(const field of ['xp','answered','correct'])if(!Number.isFinite(raw[field])||raw[field]<0)throw new Error('В файле повреждены числовые данные.');
  if(raw.correct>raw.answered||raw.completed.some(id=>!LESSONS.some(l=>l.id===id))||raw.mistakes.some(id=>!isKana(id))||raw.days.some(d=>!/^\d{4}-\d{2}-\d{2}$/.test(d)))throw new Error('В файле есть неизвестные данные.');
- if(raw.history.some(h=>!h||typeof h.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(h.date)||!['review','mistakes',...LESSONS.map(l=>l.id)].includes(h.lessonId)||!Number.isInteger(h.correct)||!Number.isInteger(h.total)||h.correct<0||h.total<1||h.correct>h.total))throw new Error('Повреждена история занятий.');
+ if(raw.history.some(h=>!h||typeof h.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(h.date)||!['review','mistakes','practice',...LESSONS.flatMap(l=>[l.id,`practice:${l.id}`])].includes(h.lessonId)||!Number.isInteger(h.correct)||!Number.isInteger(h.total)||h.correct<0||h.total<1||h.correct>h.total))throw new Error('Повреждена история занятий.');
  for(const [id,m] of Object.entries(raw.mastery)){if(!isKana(id)||!m||['right','wrong','streak','dueAt'].some(f=>!Number.isFinite(m[f])||m[f]<0))throw new Error('Повреждены данные о знаках.');}
  if(raw.session){const s=raw.session;if(!['learn','exercise','result'].includes(s.phase)||!Array.isArray(s.ids)||s.ids.some(id=>!isKana(id))||!Array.isArray(s.questions)||!Number.isInteger(s.index)||s.index<0||s.index>=s.questions.length||!Number.isInteger(s.learnIndex)||s.learnIndex<0||s.learnIndex>=s.ids.length||!Number.isFinite(s.firstAnswers)||!Number.isFinite(s.firstCorrect)||s.questions.some(q=>!q||!isKana(q.id)||!['read','listen','type'].includes(q.type)||!Array.isArray(q.options)||q.options.some(id=>!isKana(id))))throw new Error('Повреждено сохранение занятия.');
    if(s.feedback&&(typeof s.feedback.correct!=='boolean'||typeof s.feedback.value!=='string'||s.feedback.value.length>200||![0,3,5].includes(s.feedback.earned)))throw new Error('Повреждён результат ответа.');
  }
- return {...freshState(),...raw};
+ return {...freshState(),...raw,genki:validateGenki(raw.genki)};
 }

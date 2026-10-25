@@ -12,7 +12,7 @@ for(const name of await readdir(directory)){
  const path=join(directory,name),source=await readFile(path,'utf8');
  const updated=name.endsWith('.mjs')
   ?source.replace(/(\bfrom\s*['"])(\.\/[^'"]+\.mjs)(?:\?[^'"]*)?(['"])/g,`$1$2?v=${revision}$3`)
-  :source.replace(/((?:src|href)=['"])((?:app\.mjs|styles\.css))(?:\?[^'"]*)?(['"])/g,`$1$2?v=${revision}$3`);
+  :source.replace(/((?:src|href)=['"])((?:[a-zA-Z0-9-]+\.mjs|styles\.css))(?:\?[^'"]*)?(['"])/g,`$1$2?v=${revision}$3`);
  if(updated!==source)await writeFile(path,updated);
 }
 console.log(`Published assets versioned: ${revision.slice(0,7)}.`);

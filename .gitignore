@@ -14,3 +14,6 @@ worker/.dev.vars.*
 !worker/.dev.vars.example
 worker/wrangler.local.json
 worker/wrangler.generated.json
+# Publisher recordings are deployed only behind the Worker access gate.
+dist/assets/genki/
+.pages-build/

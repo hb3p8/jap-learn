@@ -1,0 +1,12 @@
+import {cp,rm,mkdir,readFile,writeFile,readdir,access} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {GENKI_AUDIO} from '../dist/genki-content.mjs';
+import {CLOUDFLARE_SYNC_URL} from '../dist/config.mjs';
+for(const file of Object.values(GENKI_AUDIO))await access(resolve('dist',file));
+const output=resolve('.local/private-site');await rm(output,{recursive:true,force:true});await mkdir(output,{recursive:true});await cp(resolve('dist'),output,{recursive:true});
+await writeFile(join(output,'config.mjs'),`export const CLOUDFLARE_SYNC_URL=${JSON.stringify(CLOUDFLARE_SYNC_URL)};\nexport const PRIVATE_APP=true;\n`);
+const hash=createHash('sha256');for(const file of (await readdir(output)).filter(f=>/\.(html|mjs|css)$/.test(f)).sort())hash.update(await readFile(join(output,file)));
+const revision=hash.digest('hex');execFileSync(process.execPath,['scripts/prepare-assets.mjs',output],{env:{...process.env,GITHUB_SHA:revision},stdio:'inherit'});
+await writeFile(resolve('.local/private-revision.txt'),revision+'\n');console.log('Private Worker assets prepared.');

@@ -1,7 +1,7 @@
 import {validateState} from './engine.mjs';
 export const MAX_STATE_BYTES=150000;
 export function stateJSON(state){return JSON.stringify(validateState(state));}
-export function hasProgress(state){return state.answered>0||state.completed.length>0||!!state.session;}
+export function hasProgress(state){return state.answered>0||state.completed.length>0||!!state.session||!!state.genki?.session||!!state.genki?.completed?.length||!!Object.keys(state.genki?.mastery||{}).length;}
 export function validateRecord(value){
  const validId=id=>typeof id==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(id);
  if(!value||typeof value!=='object'||!validId(value.id)||!validId(value.device))throw new Error('Неверный формат сохранения.');
@@ -26,6 +26,9 @@ export function syncDecision(local,heads,meta={}){
  const remote=heads[0],remoteJSON=stateJSON(remote.state);
  if(remoteJSON===json)return {action:'ack',remote};
  if(remote.id===meta.lastCloudId)return {action:'push',parents};
- if(json===meta.lastSyncedJSON||(!hasProgress(local)&&!meta.lastCloudId))return {action:'pull',remote};
+ let previous=meta.lastSyncedJSON;
+ // Old clients stored snapshots before the Genki section existed.
+ try{if(previous)previous=stateJSON(JSON.parse(previous));}catch{}
+ if(json===previous||(!hasProgress(local)&&!meta.lastCloudId))return {action:'pull',remote};
  return {action:'conflict',parents};
 }

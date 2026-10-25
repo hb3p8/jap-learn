@@ -8,6 +8,17 @@
     "ALLOWED_ORIGINS": "https://hb3p8.github.io,http://localhost:4173,http://127.0.0.1:4173"
   },
   "d1_databases": [
-    {"binding": "DB", "database_name": "jap-learn-progress", "migrations_dir": "migrations"}
-  ]
+    {
+      "binding": "DB",
+      "database_name": "jap-learn-progress",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "assets": {
+    "directory": "../.local/private-site",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none",
+    "not_found_handling": "none"
+  }
 }

@@ -69,5 +69,5 @@ health=await readHealth(true);
 const response=await fetch(endpoint+'/v1/heads',{headers:{Authorization:`Bearer ${key}`}});if(!response.ok)throw new Error('Authenticated D1 read failed.');
 const unauthorized=await fetch(endpoint+'/v1/heads');if(unauthorized.status!==401)throw new Error('Worker authentication check failed.');
 await writeFile(path.join(privateDir,'cloudflare-connection.json'),JSON.stringify({endpoint,key},null,2)+'\n',{mode:0o600});
-await writeFile(path.join(root,'dist/config.mjs'),`// Public Worker URL. The synchronization key is never published.\nexport const CLOUDFLARE_SYNC_URL = ${JSON.stringify(endpoint)};\n`);
+await writeFile(path.join(root,'dist/config.mjs'),`// Public Worker URL. The synchronization key is never published.\nexport const CLOUDFLARE_SYNC_URL = ${JSON.stringify(endpoint)};\nexport const PRIVATE_APP = false;\n`);
 console.log(JSON.stringify({ready:true,endpoint,key_file:'.local/sync-key.txt',connection_file:'.local/cloudflare-connection.json'}));

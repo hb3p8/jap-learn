@@ -8,10 +8,11 @@ export function normalizeEndpoint(value){
 export const validSyncKey=key=>typeof key==='string'&&/^[a-zA-Z0-9_-]{32,128}$/.test(key);
 export class CloudflareStore{
  // Browser fetch requires its Window/WorkerGlobalScope receiver.
- constructor(endpoint,key,{fetcher=globalThis.fetch.bind(globalThis)}={}){this.endpoint=normalizeEndpoint(endpoint);if(!validSyncKey(key))throw new Error('Неверный формат ключа синхронизации.');this.key=key;this.fetcher=fetcher;}
+ constructor(endpoint,key,{fetcher=globalThis.fetch.bind(globalThis),sessionAuth=false}={}){this.endpoint=normalizeEndpoint(endpoint);if(!sessionAuth&&!validSyncKey(key))throw new Error('Неверный формат ключа синхронизации.');this.key=key;this.fetcher=fetcher;this.sessionAuth=sessionAuth;}
  async request(path,{method='GET',body}={}){
+   const serialized=body?JSON.stringify(body):null;
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);let response;
-   try{response=await this.fetcher(this.endpoint+path,{method,headers:{Authorization:`Bearer ${this.key}`,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),cache:'no-store',credentials:'omit',signal:controller.signal});}
+   try{response=await this.fetcher(this.endpoint+path,{method,headers:{...(!this.sessionAuth?{Authorization:`Bearer ${this.key}`}:{ }),...(body?{'Content-Type':'application/json'}:{})},...(body?{body:serialized}:{}),cache:'no-store',credentials:this.sessionAuth?'same-origin':'omit',keepalive:!serialized||new TextEncoder().encode(serialized).length<60000,signal:controller.signal});}
    catch(error){throw new SyncAPIError(error.name==='AbortError'?'Сервер не ответил вовремя. Прогресс сохранён локально.':'Нет соединения с синхронизацией. Прогресс сохранён локально.',0);}finally{clearTimeout(timer);}
    const data=await response.json().catch(()=>({}));
    if(!response.ok){const messages={401:'Неверный ключ синхронизации.',403:'Адрес приложения не разрешён сервером.',409:'Версии изменились. Повтори синхронизацию.',413:'Сохранение слишком большое.',429:'Лимит запросов. Повтори синхронизацию позже.',503:'Сервер синхронизации ещё не настроен.'};throw new SyncAPIError(messages[response.status]||'Ошибка синхронизации. Локальный прогресс сохранён.',response.status);}return data;

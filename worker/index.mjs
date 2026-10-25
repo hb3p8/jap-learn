@@ -1,4 +1,5 @@
 import {validateRecord,stateJSON} from '../dist/sync-core.mjs';
+import {cookieKey,accessHeaders,loginPage,handleAccess} from './access.mjs';
 
 const MAX_BODY=200000;
 function json(body,status=200,origin=null){
@@ -7,10 +8,10 @@ function json(body,status=200,origin=null){
  return new Response(JSON.stringify(body),{status,headers});
 }
 export async function keyHash(key){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(key)))].map(b=>b.toString(16).padStart(2,'0')).join('');}
-async function authorized(request,expected){
+export async function verifyKey(key,expected){
  if(!/^[a-f0-9]{64}$/i.test(expected||''))return false;
- const match=/^Bearer ([A-Za-z0-9_-]{32,128})$/.exec(request.headers.get('Authorization')||'');if(!match)return false;
- const actual=await keyHash(match[1]);let diff=0;const lower=expected.toLowerCase();
+ if(typeof key!=='string'||! /^[A-Za-z0-9_-]{32,128}$/.test(key))return false;
+ const actual=await keyHash(key);let diff=0;const lower=expected.toLowerCase();
  for(let i=0;i<64;i++)diff|=actual.charCodeAt(i)^lower.charCodeAt(i);return diff===0;
 }
 async function readBody(request){
@@ -40,19 +41,32 @@ async function appendRecord(db,record){
  try{await db.batch(statements);}catch(error){const duplicate=await db.prepare('SELECT id, device, saved_at, state_json FROM snapshots WHERE id = ?').bind(record.id).first();if(duplicate)return appendRecord(db,record);throw error;}return record;
 }
 export default {async fetch(request,env){
- const requestedOrigin=request.headers.get('Origin'),allowed=new Set((env.ALLOWED_ORIGINS||'').split(',').map(v=>v.trim()).filter(Boolean));
- const origin=requestedOrigin&&allowed.has(requestedOrigin)?requestedOrigin:null;
+ const url=new URL(request.url),requestedOrigin=request.headers.get('Origin'),allowed=new Set((env.ALLOWED_ORIGINS||'').split(',').map(v=>v.trim()).filter(Boolean));
+ const origin=requestedOrigin&&(allowed.has(requestedOrigin)||requestedOrigin===url.origin)?requestedOrigin:null;
  if(requestedOrigin&&!origin)return json({error:'Этот адрес приложения не разрешён.'},403);
  const path=new URL(request.url).pathname.replace(/\/$/,'');
  if(request.method==='OPTIONS')return json({},200,origin);
  if(path==='/health'&&request.method==='GET')return json({ok:!!env.DB&&/^[a-f0-9]{64}$/i.test(env.SYNC_KEY_HASH||''),service:'kana-sync',version:1},200,origin);
  if(!env.DB||!/^[a-f0-9]{64}$/i.test(env.SYNC_KEY_HASH||''))return json({error:'Синхронизация ещё не настроена.'},503,origin);
- if(!await authorized(request,env.SYNC_KEY_HASH))return json({error:'Неверный ключ синхронизации.'},401,origin);
+ const access=await handleAccess(request,env,verifyKey);if(access)return access;
+ const bearer=/^Bearer ([A-Za-z0-9_-]{32,128})$/.exec(request.headers.get('Authorization')||'')?.[1];
+ const token=request.headers.has('Authorization')?bearer:cookieKey(request);
+ const authenticated=await verifyKey(token,env.SYNC_KEY_HASH);
+ if(!bearer&&requestedOrigin&&requestedOrigin!==url.origin)return json({error:'Для этого запроса нужен ключ доступа.'},401,origin);
+ if(!authenticated){
+  if(env.ASSETS&&request.method==='GET'&&(path===''||path==='/index.html'||path==='/auth/login'))return loginPage();
+  return json({error:'Неверный ключ синхронизации.'},401,origin);
+ }
  try{
    if(path==='/v1/heads'&&request.method==='GET')return json({heads:await getHeads(env.DB)},200,origin);
    if(path==='/v1/snapshots'&&request.method==='POST'){
      let record;try{record=validateRecord(await readBody(request));}catch(error){return json({error:error.message},error.status||400,origin);}
      return json({record:await appendRecord(env.DB,record)},200,origin);
+   }
+   if(env.ASSETS&&['GET','HEAD'].includes(request.method)&&!path.startsWith('/v1/')&&!path.startsWith('/auth/')){
+     const assetRequest=path===''?new Request(new URL('/index.html',url),request):request;
+     const asset=await env.ASSETS.fetch(assetRequest),headers=new Headers(asset.headers);for(const [name,value]of Object.entries(accessHeaders()))headers.set(name,value);headers.set('X-Kana-Private','1');
+     return new Response(asset.body,{status:asset.status,headers});
    }
    return json({error:'Маршрут не найден.'},404,origin);
  }catch(error){return json({error:error.status?error.message:'Не удалось выполнить операцию. Локальный прогресс сохранён.'},error.status||500,origin);}
