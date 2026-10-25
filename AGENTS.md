@@ -10,3 +10,4 @@
 - Use the supplied local Genki second-edition collection for course material; the user requested hosted private audio without per-device imports.
 - Mobile layouts must work at 320px and 390px without horizontal scrolling. Use a consistent plain Japanese sans-serif font.
 - Kana dungeon is a short turn-based reinforcement mode. Preserve unfinished runs in cloud snapshots; gameplay must not mark lessons complete or credit answers copied after a hint. Keep input untimed and restrict the default pool to learned kana.
+- Hiragana uses the private Marugoto recordings in `dist/assets/kana-audio/`, including pitch-preserving slow variants. Keep these out of Git and Pages. Preserve attribution and use versioned audio paths when replacing recordings so old browser caches cannot mask an update.

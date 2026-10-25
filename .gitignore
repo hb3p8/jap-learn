@@ -17,3 +17,6 @@ worker/wrangler.generated.json
 # Publisher recordings are deployed only behind the Worker access gate.
 dist/assets/genki/
 .pages-build/
+
+# Japan Foundation recordings: private study, never a public Git/Pages artifact.
+dist/assets/kana-audio/
