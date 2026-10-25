@@ -1,5 +1,8 @@
 import {writeFile} from 'node:fs/promises';
-const value=(process.env.GOOGLE_CLIENT_ID||'').trim();
-if(value&&!/^\d+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(value))throw new Error('GOOGLE_CLIENT_ID must be an OAuth web client ID. Do not provide a client secret.');
-await writeFile(new URL('../dist/config.mjs',import.meta.url),`// Public Google OAuth client ID, generated for this deployment.\nexport const GOOGLE_CLIENT_ID = ${JSON.stringify(value)};\n`);
-console.log(value?'Google OAuth client ID configured.':'Google OAuth not configured; local progress remains available.');
+import {CLOUDFLARE_SYNC_URL} from '../dist/config.mjs';
+import {normalizeEndpoint} from '../dist/cloudflare-store.mjs';
+const value=(process.env.CLOUDFLARE_SYNC_URL||CLOUDFLARE_SYNC_URL||'').trim();
+const endpoint=value?normalizeEndpoint(value):'';
+if(endpoint&&!endpoint.startsWith('https://'))throw new Error('Only HTTPS synchronization endpoints may be published.');
+await writeFile(new URL('../dist/config.mjs',import.meta.url),`// Public Worker URL. The synchronization key is never published.\nexport const CLOUDFLARE_SYNC_URL = ${JSON.stringify(endpoint)};\n`);
+console.log(endpoint?'Cloudflare synchronization endpoint configured.':'Cloudflare endpoint not configured; local progress remains available.');

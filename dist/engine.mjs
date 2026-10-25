@@ -52,11 +52,14 @@ export function stats(state,now=Date.now()){
  return {mastered,seen,due,streak,level:Math.floor(state.xp/100)+1,levelXP:state.xp%100,accuracy:state.answered?Math.round(state.correct/state.answered*100):0};
 }
 export function validateState(raw){
+ const isKana=id=>typeof id==='string'&&Object.hasOwn(BY_ID,id);
  if(!raw||raw.version!==1||!Array.isArray(raw.completed)||!Array.isArray(raw.mistakes)||!Array.isArray(raw.days)||!Array.isArray(raw.history)||typeof raw.mastery!=='object'||!raw.mastery)throw new Error('Неверный формат файла прогресса.');
  for(const field of ['xp','answered','correct'])if(!Number.isFinite(raw[field])||raw[field]<0)throw new Error('В файле повреждены числовые данные.');
- if(raw.correct>raw.answered||raw.completed.some(id=>!LESSONS.some(l=>l.id===id))||raw.mistakes.some(id=>!BY_ID[id])||raw.days.some(d=>!/^\d{4}-\d{2}-\d{2}$/.test(d)))throw new Error('В файле есть неизвестные данные.');
+ if(raw.correct>raw.answered||raw.completed.some(id=>!LESSONS.some(l=>l.id===id))||raw.mistakes.some(id=>!isKana(id))||raw.days.some(d=>!/^\d{4}-\d{2}-\d{2}$/.test(d)))throw new Error('В файле есть неизвестные данные.');
  if(raw.history.some(h=>!h||typeof h.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(h.date)||!['review','mistakes',...LESSONS.map(l=>l.id)].includes(h.lessonId)||!Number.isInteger(h.correct)||!Number.isInteger(h.total)||h.correct<0||h.total<1||h.correct>h.total))throw new Error('Повреждена история занятий.');
- for(const [id,m] of Object.entries(raw.mastery)){if(!BY_ID[id]||!m||['right','wrong','streak','dueAt'].some(f=>!Number.isFinite(m[f])||m[f]<0))throw new Error('Повреждены данные о знаках.');}
- if(raw.session){const s=raw.session;if(!['learn','exercise','result'].includes(s.phase)||!Array.isArray(s.ids)||s.ids.some(id=>!BY_ID[id])||!Array.isArray(s.questions)||!Number.isInteger(s.index)||s.index<0||s.index>=s.questions.length||!Number.isInteger(s.learnIndex)||s.learnIndex<0||s.learnIndex>=s.ids.length||!Number.isFinite(s.firstAnswers)||!Number.isFinite(s.firstCorrect)||s.questions.some(q=>!BY_ID[q.id]||!['read','listen','type'].includes(q.type)||!Array.isArray(q.options)||q.options.some(id=>!BY_ID[id])))throw new Error('Повреждено сохранение занятия.');}
+ for(const [id,m] of Object.entries(raw.mastery)){if(!isKana(id)||!m||['right','wrong','streak','dueAt'].some(f=>!Number.isFinite(m[f])||m[f]<0))throw new Error('Повреждены данные о знаках.');}
+ if(raw.session){const s=raw.session;if(!['learn','exercise','result'].includes(s.phase)||!Array.isArray(s.ids)||s.ids.some(id=>!isKana(id))||!Array.isArray(s.questions)||!Number.isInteger(s.index)||s.index<0||s.index>=s.questions.length||!Number.isInteger(s.learnIndex)||s.learnIndex<0||s.learnIndex>=s.ids.length||!Number.isFinite(s.firstAnswers)||!Number.isFinite(s.firstCorrect)||s.questions.some(q=>!q||!isKana(q.id)||!['read','listen','type'].includes(q.type)||!Array.isArray(q.options)||q.options.some(id=>!isKana(id))))throw new Error('Повреждено сохранение занятия.');
+   if(s.feedback&&(typeof s.feedback.correct!=='boolean'||typeof s.feedback.value!=='string'||s.feedback.value.length>200||![0,3,5].includes(s.feedback.earned)))throw new Error('Повреждён результат ответа.');
+ }
  return {...freshState(),...raw};
 }

@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync} from 'node:fs';
+import worker,{keyHash} from '../worker/index.mjs';
+import {freshState} from '../dist/engine.mjs';
+import {makeRecord} from '../dist/sync-core.mjs';
+
+const key='k'.repeat(43),origin='https://hb3p8.github.io',hash=await keyHash(key);
+function setup(t){
+ const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys=ON;');sqlite.exec(readFileSync(new URL('../worker/migrations/0001_snapshots.sql',import.meta.url),'utf8'));t.after(()=>sqlite.close());
+ const db={prepare(sql){let params=[];const stmt={bind(...values){params=values;return stmt;},async first(){return sqlite.prepare(sql).get(...params)||null;},async all(){return {success:true,results:sqlite.prepare(sql).all(...params)};},execute(){return sqlite.prepare(sql).run(...params);}};return stmt;},async batch(statements){sqlite.exec('BEGIN');try{const results=statements.map(s=>s.execute());sqlite.exec('COMMIT');return results;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
+ const env={DB:db,SYNC_KEY_HASH:hash,ALLOWED_ORIGINS:origin};
+ return {sqlite,env,request(path,body,{token=key,requestOrigin=origin,method=body?'POST':'GET',headers={}}={}){return worker.fetch(new Request('https://sync.example.test'+path,{method,headers:{Origin:requestOrigin,...(token?{Authorization:'Bearer '+token}:{}),...(body?{'Content-Type':'application/json'}:{}),...headers},...(body?{body:typeof body==='string'?body:JSON.stringify(body)}:{})}),env);}};
+}
+const record=(id,parents=[],xp=0)=>makeRecord({...freshState(),xp,answered:xp?1:0,correct:xp?1:0},{id,parents,device:'phone'});
+test('progress is unreadable without the personal key',async t=>{const app=setup(t);assert.equal((await app.request('/v1/heads',null,{token:''})).status,401);assert.equal((await app.request('/v1/heads',null,{token:'z'.repeat(43)})).status,401);assert.equal(app.sqlite.prepare('SELECT count(*) n FROM snapshots').get().n,0);});
+test('an unset secret fails closed',async t=>{const app=setup(t);app.env.SYNC_KEY_HASH='';assert.equal((await app.request('/v1/heads')).status,503);});
+test('only configured browser origins receive CORS permission',async t=>{const app=setup(t);assert.equal((await app.request('/v1/heads',null,{requestOrigin:'https://attacker.test'})).status,403);const response=await app.request('/v1/heads',null,{method:'OPTIONS',token:''});assert.equal(response.status,200);assert.equal(response.headers.get('Access-Control-Allow-Origin'),origin);assert.match(response.headers.get('Access-Control-Allow-Headers'),/Authorization/);});
+test('snapshot write, read and duplicate retry retain one record',async t=>{const app=setup(t),r=record('a',[],10);assert.equal((await app.request('/v1/snapshots',r)).status,200);assert.equal((await app.request('/v1/snapshots',r)).status,200);const data=await (await app.request('/v1/heads')).json();assert.equal(data.heads[0].state.xp,10);assert.equal(app.sqlite.prepare('SELECT count(*) n FROM snapshots').get().n,1);});
+test('concurrent retry of the same UUID is idempotent',async t=>{const app=setup(t),r=record('a',[],10);const results=await Promise.all([app.request('/v1/snapshots',r),app.request('/v1/snapshots',r)]);assert.deepEqual(results.map(r=>r.status),[200,200]);assert.equal(app.sqlite.prepare('SELECT count(*) n FROM snapshots').get().n,1);});
+test('a UUID cannot overwrite different progress',async t=>{const app=setup(t);await app.request('/v1/snapshots',record('a',[],10));assert.equal((await app.request('/v1/snapshots',record('a',[],20))).status,409);assert.equal((await (await app.request('/v1/heads')).json()).heads[0].state.xp,10);});
+test('independent device versions and their explicit resolution retain history',async t=>{const app=setup(t);for(const r of [record('a'),record('b',['a'],5),record('c',['a'],10)])assert.equal((await app.request('/v1/snapshots',r)).status,200);assert.equal((await (await app.request('/v1/heads')).json()).heads.length,2);assert.equal((await app.request('/v1/snapshots',record('d',['b','c'],10))).status,200);assert.deepEqual((await (await app.request('/v1/heads')).json()).heads.map(h=>h.id),['d']);assert.equal(app.sqlite.prepare('SELECT count(*) n FROM snapshots').get().n,4);});
+test('unknown parents are rejected without creating a partial snapshot',async t=>{const app=setup(t);assert.equal((await app.request('/v1/snapshots',record('a',['missing']))).status,409);assert.equal(app.sqlite.prepare('SELECT count(*) n FROM snapshots').get().n,0);});
+test('invalid JSON, state, media type and oversized requests cannot be stored',async t=>{const app=setup(t);assert.equal((await app.request('/v1/snapshots','{bad')).status,400);assert.equal((await app.request('/v1/snapshots',{})).status,400);assert.equal((await app.request('/v1/snapshots',record('a'),{headers:{'Content-Type':'text/plain'}})).status,415);assert.equal((await app.request('/v1/snapshots','x'.repeat(200001))).status,413);assert.equal(app.sqlite.prepare('SELECT count(*) n FROM snapshots').get().n,0);});
+test('private responses cannot be cached',async t=>{const response=await setup(t).request('/v1/heads');assert.equal(response.headers.get('Cache-Control'),'no-store');assert.equal(response.headers.get('Vary'),'Origin');});

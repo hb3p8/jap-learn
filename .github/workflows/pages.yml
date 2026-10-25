@@ -29,7 +29,7 @@ jobs:
       - name: Prepare public configuration
         run: node scripts/prepare-config.mjs
         env:
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          CLOUDFLARE_SYNC_URL: ${{ vars.CLOUDFLARE_SYNC_URL }}
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site

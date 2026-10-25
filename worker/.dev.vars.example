@@ -1,0 +1,2 @@
+# Development only. SHA-256 of a random sync key; generate with the setup script.
+SYNC_KEY_HASH=""

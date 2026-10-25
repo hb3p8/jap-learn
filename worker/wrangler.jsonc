@@ -1,0 +1,13 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "jap-learn-sync",
+  "main": "index.mjs",
+  "compatibility_date": "2026-10-25",
+  "workers_dev": true,
+  "vars": {
+    "ALLOWED_ORIGINS": "https://hb3p8.github.io,http://localhost:4173,http://127.0.0.1:4173"
+  },
+  "d1_databases": [
+    {"binding": "DB", "database_name": "jap-learn-progress", "migrations_dir": "migrations"}
+  ]
+}
