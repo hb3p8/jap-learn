@@ -7,7 +7,8 @@ export function normalizeEndpoint(value){
 }
 export const validSyncKey=key=>typeof key==='string'&&/^[a-zA-Z0-9_-]{32,128}$/.test(key);
 export class CloudflareStore{
- constructor(endpoint,key,{fetcher=fetch}={}){this.endpoint=normalizeEndpoint(endpoint);if(!validSyncKey(key))throw new Error('Неверный формат ключа синхронизации.');this.key=key;this.fetcher=fetcher;}
+ // Browser fetch requires its Window/WorkerGlobalScope receiver.
+ constructor(endpoint,key,{fetcher=globalThis.fetch.bind(globalThis)}={}){this.endpoint=normalizeEndpoint(endpoint);if(!validSyncKey(key))throw new Error('Неверный формат ключа синхронизации.');this.key=key;this.fetcher=fetcher;}
  async request(path,{method='GET',body}={}){
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);let response;
    try{response=await this.fetcher(this.endpoint+path,{method,headers:{Authorization:`Bearer ${this.key}`,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),cache:'no-store',credentials:'omit',signal:controller.signal});}
