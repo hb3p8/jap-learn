@@ -30,6 +30,8 @@ jobs:
         run: node scripts/prepare-config.mjs
         env:
           CLOUDFLARE_SYNC_URL: ${{ vars.CLOUDFLARE_SYNC_URL }}
+      - name: Version browser assets
+        run: node scripts/prepare-assets.mjs
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site
