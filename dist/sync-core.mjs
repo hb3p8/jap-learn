@@ -1,7 +1,7 @@
 import {validateState} from './engine.mjs';
 export const MAX_STATE_BYTES=150000;
 export function stateJSON(state){return JSON.stringify(validateState(state));}
-export function hasProgress(state){return state.answered>0||state.completed.length>0||!!state.session||!!state.genki?.session||!!state.genki?.completed?.length||!!Object.keys(state.genki?.mastery||{}).length;}
+export function hasProgress(state){return !!state.dungeon?.run||!!state.dungeon?.history?.length||state.answered>0||state.completed.length>0||!!state.session||!!state.genki?.session||!!state.genki?.completed?.length||!!Object.keys(state.genki?.mastery||{}).length;}
 export function validateRecord(value){
  const validId=id=>typeof id==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(id);
  if(!value||typeof value!=='object'||!validId(value.id)||!validId(value.device))throw new Error('Неверный формат сохранения.');

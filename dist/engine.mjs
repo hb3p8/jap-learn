@@ -1,8 +1,9 @@
 import {KANA,BY_ID,LESSONS,CONFUSABLES} from './content.mjs';
 import {freshGenki,validateGenki} from './genki-engine.mjs';
+import {freshDungeon,validateDungeon} from './dungeon-state.mjs';
 export const STORAGE_KEY='kana-garden-v1';
 export const DAY=86400000;
-export function freshState(){return {version:1,xp:0,answered:0,correct:0,completed:[],mastery:{},mistakes:[],days:[],history:[],session:null,genki:freshGenki()};}
+export function freshState(){return {version:1,xp:0,answered:0,correct:0,completed:[],mastery:{},mistakes:[],days:[],history:[],session:null,genki:freshGenki(),dungeon:freshDungeon()};}
 export function dateKey(time=Date.now()){const d=new Date(time);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 export function shuffle(list,rng=Math.random){const a=[...list];for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 export function normalize(value){return String(value).normalize('NFKC').trim().toLowerCase().replace(/\s+/g,'');}
@@ -21,15 +22,20 @@ export function startSession(lessonId,state,rng=Math.random,now=Date.now()){
  const questions=[...shuffle(ids,rng).map(id=>question(id,pool.length<2?'type':'read',pool,rng)),...shuffle(ids,rng).map(id=>question(id,pool.length<2?'type':'listen',pool,rng)),...shuffle(ids,rng).slice(0,2).map(id=>question(id,'type',pool,rng))];
  return {id:`s-${now}`,lessonId,ids,pool,questions,index:0,phase:lesson?'learn':'exercise',learnIndex:0,feedback:null,firstAnswers:0,firstCorrect:0,startedAt:now,finished:false};
 }
+export function recordKanaRecall(state,id,correct,now=Date.now(),earned=correct?5:0){
+ const old=state.mastery[id]||{right:0,wrong:0,streak:0,dueAt:0};
+ const streak=correct?old.streak+1:0;
+ const intervals=[0,5*60000,DAY,3*DAY,7*DAY,14*DAY,30*DAY];
+ const m={right:old.right+(correct?1:0),wrong:old.wrong+(correct?0:1),streak,dueAt:now+(correct?intervals[Math.min(streak,6)]:60000),lastAnsweredAt:now};
+ const mistakes=new Set(state.mistakes);if(!correct)mistakes.add(id);else if(streak>=2)mistakes.delete(id);
+ const today=dateKey(now);
+ return {...state,xp:state.xp+earned,answered:state.answered+1,correct:state.correct+Number(correct),days:state.days.includes(today)?state.days:[...state.days,today].slice(-730),mastery:{...state.mastery,[id]:m},mistakes:[...mistakes]};
+}
 export function answer(state,value,now=Date.now()){
  const session=state.session;if(!session||session.feedback||session.finished||session.phase!=='exercise')return state;
  const q=session.questions[session.index];if(!q)return state;
  const correct=q.type==='type'?accepts(q.id,value):value===q.id;
- const old=state.mastery[q.id]||{right:0,wrong:0,streak:0,dueAt:0};
- const streak=correct?old.streak+1:0;
- const intervals=[0,5*60000,DAY,3*DAY,7*DAY,14*DAY,30*DAY];
- const m={right:old.right+(correct?1:0),wrong:old.wrong+(correct?0:1),streak,dueAt:now+(correct?intervals[Math.min(streak,6)]:60000),lastAnsweredAt:now};
- const mistakes=new Set(state.mistakes);if(!correct)mistakes.add(q.id);else if(streak>=2)mistakes.delete(q.id);
+ const updated=recordKanaRecall(state,q.id,correct,now,correct?(q.retry?3:5):0),mistakes=new Set(updated.mistakes);
  let questions=[...session.questions];
  // An error returns after two intervening tasks. A second successful recall clears it.
  if(!correct || (mistakes.has(q.id)&&!questions.slice(session.index+1).some(item=>item.id===q.id))){
@@ -37,7 +43,7 @@ export function answer(state,value,now=Date.now()){
    if(!future&&questions.length<60)questions.splice(Math.min(session.index+3,questions.length),0,{...question(q.id,'read',session.pool||q.options,Math.random),retry:true});
  }
  const first=!q.retry;const today=dateKey(now);
- return {...state,xp:state.xp+(correct?(q.retry?3:5):0),answered:state.answered+1,correct:state.correct+(correct?1:0),days:state.days.includes(today)?state.days:[...state.days,today].slice(-730),mastery:{...state.mastery,[q.id]:m},mistakes:[...mistakes],session:{...session,questions,firstAnswers:session.firstAnswers+(first?1:0),firstCorrect:session.firstCorrect+(first&&correct?1:0),feedback:{correct,value,earned:correct?(q.retry?3:5):0}}};
+ return {...updated,session:{...session,questions,firstAnswers:session.firstAnswers+(first?1:0),firstCorrect:session.firstCorrect+(first&&correct?1:0),feedback:{correct,value,earned:correct?(q.retry?3:5):0}}};
 }
 export function advance(state,now=Date.now()){
  const s=state.session;if(!s?.feedback)return state;
@@ -64,5 +70,5 @@ export function validateState(raw){
  if(raw.session){const s=raw.session;if(!['learn','exercise','result'].includes(s.phase)||!Array.isArray(s.ids)||s.ids.some(id=>!isKana(id))||!Array.isArray(s.questions)||!Number.isInteger(s.index)||s.index<0||s.index>=s.questions.length||!Number.isInteger(s.learnIndex)||s.learnIndex<0||s.learnIndex>=s.ids.length||!Number.isFinite(s.firstAnswers)||!Number.isFinite(s.firstCorrect)||s.questions.some(q=>!q||!isKana(q.id)||!['read','listen','type'].includes(q.type)||!Array.isArray(q.options)||q.options.some(id=>!isKana(id))))throw new Error('Повреждено сохранение занятия.');
    if(s.feedback&&(typeof s.feedback.correct!=='boolean'||typeof s.feedback.value!=='string'||s.feedback.value.length>200||![0,3,5].includes(s.feedback.earned)))throw new Error('Повреждён результат ответа.');
  }
- return {...freshState(),...raw,genki:validateGenki(raw.genki)};
+ return {...freshState(),...raw,genki:validateGenki(raw.genki),dungeon:validateDungeon(raw.dungeon)};
 }
